@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shortest Path Visualization</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto p-4">
+        <div class="flex gap-4">
+            <!-- Left Panel - Controls -->
+            <div class="w-1/3 bg-white rounded-lg shadow-lg overflow-hidden">
+                <!-- Header with Language Switcher -->
+                <div class="bg-indigo-600 p-4 text-white flex justify-between items-center">
+                    <h2 class="text-xl font-bold flex items-center">
+                        <i class="fas fa-project-diagram mr-2"></i>
+                        <span data-i18n="title">Graph Controls</span>
+                    </h2>
+                    <div class="flex items-center space-x-2">
+                        <select id="languageSwitch" class="bg-white text-indigo-600 px-2 py-1 rounded text-sm">
+                            <option value="en">🇬🇧 EN</option>
+                            <option value="fr">🇫🇷 FR</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="p-4 space-y-6">
+                    <!-- Node Management Section -->
+                    <div class="space-y-3">
+                        <h3 class="font-semibold text-gray-700 flex items-center">
+                            <i class="fas fa-circle-nodes mr-2"></i>
+                            <span data-i18n="nodeManagement">Node Management</span>
+                        </h3>
+                        <div class="bg-gray-50 p-3 rounded-lg">
+                            <input type="text" id="nodeName" data-i18n="enterNodeName" placeholder="Enter node name" 
+                                   class="w-full p-2 border rounded mb-2 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
+                            <button id="addNode" class="w-full bg-indigo-600 text-white py-2 px-4 rounded hover:bg-indigo-700 flex items-center justify-center">
+                                <i class="fas fa-plus mr-2"></i>
+                                <span data-i18n="addNode">Add Node</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Edge Management Section -->
+                    <div class="space-y-3">
+                        <h3 class="font-semibold text-gray-700 flex items-center">
+                            <i class="fas fa-share-nodes mr-2"></i>
+                            <span data-i18n="edgeManagement">Edge Management</span>
+                        </h3>
+                        <div class="bg-gray-50 p-3 rounded-lg space-y-2">
+                            <div class="flex gap-2">
+                                <div class="flex-1">
+                                    <label class="text-sm text-gray-600 block mb-1" data-i18n="source">Source</label>
+                                    <select id="sourceNode" class="w-full p-2 border rounded focus:border-indigo-500">
+                                        <option value="A">A</option>
+                                    </select>
+                                </div>
+                                <div class="w-20">
+                                    <label class="text-sm text-gray-600 block mb-1" data-i18n="weight">Weight</label>
+                                    <input type="number" id="weight" class="w-full p-2 border rounded focus:border-indigo-500">
+                                </div>
+                                <div class="flex-1">
+                                    <label class="text-sm text-gray-600 block mb-1" data-i18n="target">Target</label>
+                                    <select id="targetNode" class="w-full p-2 border rounded focus:border-indigo-500">
+                                        <option value="B">B</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <button id="addEdge" class="w-full bg-indigo-600 text-white py-2 px-4 rounded hover:bg-indigo-700 flex items-center justify-center">
+                                <i class="fas fa-link mr-2"></i>
+                                <span data-i18n="addEdge">Add Edge</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Path Finding Section -->
+                    <div class="space-y-3">
+                        <h3 class="font-semibold text-gray-700 flex items-center">
+                            <i class="fas fa-route mr-2"></i>
+                            <span data-i18n="findPath">Find Shortest Path</span>
+                        </h3>
+                        <div class="bg-gray-50 p-3 rounded-lg space-y-2">
+                            <div class="flex gap-2">
+                                <div class="flex-1">
+                                    <label class="text-sm text-gray-600 block mb-1" data-i18n="start">Start</label>
+                                    <select id="startNode" class="w-full p-2 border rounded focus:border-indigo-500">
+                                        <option value="A">A</option>
+                                    </select>
+                                </div>
+                                <div class="flex-1">
+                                    <label class="text-sm text-gray-600 block mb-1" data-i18n="destination">Destination</label>
+                                    <select id="endNode" class="w-full p-2 border rounded focus:border-indigo-500">
+                                        <option value="B">B</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <button id="findPath" class="w-full bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700 flex items-center justify-center">
+                                <i class="fas fa-play mr-2"></i>
+                                <span data-i18n="findPathBtn">Find Path</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="flex gap-2">
+                        <button id="clearGraph" class="flex-1 px-4 py-2 bg-red-100 text-red-600 rounded hover:bg-red-200 flex items-center justify-center">
+                            <i class="fas fa-trash-alt mr-2"></i>
+                            <span data-i18n="clear">Clear</span>
+                        </button>
+                        <button id="centerView" class="flex-1 px-4 py-2 bg-gray-100 text-gray-600 rounded hover:bg-gray-200 flex items-center justify-center">
+                            <i class="fas fa-compress-arrows-alt mr-2"></i>
+                            <span data-i18n="center">Center</span>
+                        </button>
+                        <button id="exportGraph" class="flex-1 px-4 py-2 bg-gray-100 text-gray-600 rounded hover:bg-gray-200 flex items-center justify-center">
+                            <i class="fas fa-download mr-2"></i>
+                            <span data-i18n="export">Export</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Profile Section -->
+                <div class="border-t mt-4">
+                    <div class="p-4 flex items-center space-x-4">
+                        <div class="profile-image-container">
+                            <img src="./images/profile.png" 
+                                 alt="Profile" 
+                                 class="w-12 h-12 rounded-full border-2 border-indigo-200">
+                        </div>
+                        <div class="flex-1">
+                            <h3 class="font-semibold text-gray-800">Anouar GOURTANE</h3>
+                            <p class="text-sm text-gray-500" data-i18n="role">Graph Algorithm Expert</p>
+                        </div>
+                        <button class="text-gray-400 hover:text-gray-600">
+                            <i class="fas fa-cog"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel -->
+            <div class="w-2/3 flex flex-col">
+                <!-- Graph Container -->
+                <div class="bg-white rounded-lg shadow-lg p-4 mb-4">
+                    <div id="graphContainer" class="w-full h-[500px] relative">
+                        <!-- D3.js visualization will be rendered here -->
+                    </div>
+                </div>
+
+                <!-- History Table Section -->
+                <div class="bg-white rounded-lg shadow-lg p-4">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-semibold flex items-center">
+                            <i class="fas fa-history mr-2"></i>
+                            <span data-i18n="pathHistory">Path History</span>
+                        </h3>
+                        <div class="flex gap-2">
+                            <button id="clearHistory" class="px-3 py-1.5 bg-red-50 text-red-600 rounded hover:bg-red-100 flex items-center text-sm">
+                                <i class="fas fa-trash-alt mr-2"></i>
+                                <span data-i18n="clearHistory">Clear History</span>
+                            </button>
+                            <button id="exportPDF" class="px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-100 flex items-center text-sm">
+                                <i class="fas fa-file-pdf mr-2"></i>
+                                <span data-i18n="exportPDF">Export PDF</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Table Container -->
+                    <div class="shadow-inner bg-gray-50 rounded-lg max-h-[200px] overflow-y-auto">
+                        <table class="min-w-full bg-white">
+                            <thead class="sticky top-0 bg-gray-50">
+                                <tr>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b" data-i18n="timestamp">
+                                        Timestamp
+                                    </th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b" data-i18n="from">
+                                        From
+                                    </th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b" data-i18n="to">
+                                        To
+                                    </th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b" data-i18n="path">
+                                        Path
+                                    </th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b" data-i18n="distance">
+                                        Distance
+                                    </th>
+                                    <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-b" data-i18n="actions">
+                                        Actions
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody id="pathHistoryBody" class="divide-y divide-gray-200">
+                                <!-- History entries will be added here dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html> 
