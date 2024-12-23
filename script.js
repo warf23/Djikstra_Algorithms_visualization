@@ -10,7 +10,8 @@ const nodeColors = {
     default: '#6366f1',  // Indigo
     selected: '#4f46e5', // Darker Indigo
     path: '#22c55e',     // Green
-    hover: '#818cf8'     // Light Indigo
+    hover: '#818cf8',    // Light Indigo
+    bidirectional: '#f59e0b' // Amber for bidirectional edges
 };
 
 // Initialize D3 visualization
@@ -21,6 +22,35 @@ const svg = d3.select('#graphContainer')
     .append('svg')
     .attr('width', width)
     .attr('height', height);
+
+// Add arrow markers definition
+const defs = svg.append('defs');
+
+// Default arrow
+defs.append('marker')
+    .attr('id', 'arrowhead')
+    .attr('viewBox', '-10 -10 20 20')
+    .attr('refX', 20)
+    .attr('refY', 0)
+    .attr('orient', 'auto')
+    .attr('markerWidth', 8)
+    .attr('markerHeight', 8)
+    .append('path')
+    .attr('d', 'M -10,-5 L 0,0 L -10,5')
+    .attr('fill', '#999');
+
+// Highlighted arrow
+defs.append('marker')
+    .attr('id', 'arrowhead-highlighted')
+    .attr('viewBox', '-10 -10 20 20')
+    .attr('refX', 20)
+    .attr('refY', 0)
+    .attr('orient', 'auto')
+    .attr('markerWidth', 8)
+    .attr('markerHeight', 8)
+    .append('path')
+    .attr('d', 'M -10,-5 L 0,0 L -10,5')
+    .attr('fill', '#22c55e');
 
 // Add zoom behavior
 const g = svg.append('g');
@@ -62,13 +92,14 @@ function updateGraph() {
         .append('line')
         .attr('class', 'link')
         .attr('stroke-opacity', 0)
+        .attr('marker-end', 'url(#arrowhead)')
         .on('click', handleLinkClick);
     link = linkEnter.merge(link);
     link.transition()
         .duration(500)
         .attr('stroke-opacity', 0.6);
 
-    // Update link labels with transition
+    // Update link labels with better positioning
     linkLabels = linkLabels.data(links, d => `${d.source.id}-${d.target.id}`);
     linkLabels.exit().transition()
         .duration(500)
@@ -78,6 +109,7 @@ function updateGraph() {
         .append('text')
         .attr('class', 'link-label')
         .attr('opacity', 0)
+        .attr('dy', -5)
         .text(d => d.weight);
     linkLabels = linkLabelsEnter.merge(linkLabels);
     linkLabels.transition()
@@ -134,8 +166,18 @@ function ticked() {
     link
         .attr('x1', d => d.source.x)
         .attr('y1', d => d.source.y)
-        .attr('x2', d => d.target.x)
-        .attr('y2', d => d.target.y);
+        .attr('x2', d => {
+            const dx = d.target.x - d.source.x;
+            const dy = d.target.y - d.source.y;
+            const length = Math.sqrt(dx * dx + dy * dy);
+            return d.target.x - (dx * 20) / length;
+        })
+        .attr('y2', d => {
+            const dx = d.target.x - d.source.x;
+            const dy = d.target.y - d.source.y;
+            const length = Math.sqrt(dx * dx + dy * dy);
+            return d.target.y - (dy * 20) / length;
+        });
 
     linkLabels
         .attr('x', d => (d.source.x + d.target.x) / 2)
@@ -322,12 +364,47 @@ function addNode(id) {
     }
 }
 
-// Add edge
-function addEdge(source, target, weight) {
-    if (!links.find(l => l.source.id === source && l.target.id === target)) {
-        links.push({ source, target, weight });
-        updateGraph();
+// Enhanced addEdge function with direction support
+function addEdge(source, target, weight, direction = 'one-way') {
+    // Check if edge already exists
+    const existingEdge = links.find(l => 
+        (l.source.id === source && l.target.id === target) ||
+        (l.source.id === target && l.target.id === source && l.bidirectional)
+    );
+
+    if (existingEdge) {
+        if (direction === 'bidirectional' && !existingEdge.bidirectional) {
+            // Convert to bidirectional
+            existingEdge.bidirectional = true;
+            existingEdge.color = nodeColors.bidirectional;
+        }
+        return;
     }
+
+    // Add new edge
+    const newEdge = {
+        source,
+        target,
+        weight: parseInt(weight),
+        bidirectional: direction === 'bidirectional',
+        color: direction === 'bidirectional' ? nodeColors.bidirectional : nodeColors.default
+    };
+    
+    links.push(newEdge);
+    
+    // For bidirectional edges, add reverse direction to adjacency list
+    if (direction === 'bidirectional') {
+        links.push({
+            source: target,
+            target: source,
+            weight: parseInt(weight),
+            bidirectional: true,
+            color: nodeColors.bidirectional,
+            isReverse: true // Mark as reverse edge for visualization
+        });
+    }
+    
+    updateGraph();
 }
 
 // Update node select elements
@@ -345,12 +422,13 @@ function updateNodeSelects() {
     });
 }
 
-// Dijkstra's Algorithm
+// Enhanced Dijkstra's Algorithm with direction support
 function dijkstra(start, end) {
     const distances = {};
     const previous = {};
     const unvisited = new Set();
-
+    
+    // Initialize distances
     nodes.forEach(node => {
         distances[node.id] = Infinity;
         previous[node.id] = null;
@@ -359,10 +437,10 @@ function dijkstra(start, end) {
     distances[start] = 0;
 
     while (unvisited.size > 0) {
+        // Find node with minimum distance
         let current = null;
         let minDistance = Infinity;
         
-        // Find unvisited node with minimum distance
         for (let nodeId of unvisited) {
             if (distances[nodeId] < minDistance) {
                 minDistance = distances[nodeId];
@@ -370,16 +448,18 @@ function dijkstra(start, end) {
             }
         }
 
-        if (current === null) break;
-        if (current === end) break;
+        if (current === null || current === end) break;
 
         unvisited.delete(current);
 
-        // Update distances to neighbors
-        const neighbors = links.filter(l => 
-            l.source.id === current || l.target.id === current
-        );
+        // Get valid neighbors considering edge direction
+        const neighbors = links.filter(l => {
+            if (l.source.id === current) return true;
+            if (l.bidirectional && l.target.id === current) return true;
+            return false;
+        });
 
+        // Update distances to neighbors
         for (let edge of neighbors) {
             const neighbor = edge.source.id === current ? edge.target.id : edge.source.id;
             const distance = distances[current] + edge.weight;
@@ -392,14 +472,23 @@ function dijkstra(start, end) {
     }
 
     // Reconstruct path
+    if (distances[end] === Infinity) {
+        return { path: [], distance: Infinity }; // No path found
+    }
+
     const path = [];
     let current = end;
+    
     while (current !== null) {
         path.unshift(current);
         current = previous[current];
     }
 
-    return path;
+    return { 
+        path, 
+        distance: distances[end],
+        distances // Return all distances for visualization
+    };
 }
 
 // Event Listeners
@@ -411,18 +500,23 @@ document.getElementById('addNode').addEventListener('click', () => {
     }
 });
 
+// Update the edge addition event listener
 document.getElementById('addEdge').addEventListener('click', () => {
     const source = document.getElementById('sourceNode').value;
     const target = document.getElementById('targetNode').value;
     const weight = parseInt(document.getElementById('weight').value) || 1;
-    addEdge(source, target, weight);
+    const direction = document.getElementById('edgeDirection').value;
+    
+    if (source && target && source !== target) {
+        addEdge(source, target, weight, direction);
+    }
 });
 
 document.getElementById('findPath').addEventListener('click', () => {
     const start = document.getElementById('startNode').value;
     const end = document.getElementById('endNode').value;
-    const path = dijkstra(start, end);
-    visualizeShortestPath(path);
+    const result = dijkstra(start, end);
+    visualizeShortestPath(result);
 });
 
 document.getElementById('clearGraph').addEventListener('click', () => {
@@ -522,26 +616,100 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Enhanced path visualization
-function visualizeShortestPath(path) {
+function visualizeShortestPath(result) {
+    const { path, distance, distances } = result;
+    
+    if (path.length === 0) {
+        // Show no path found message
+        showNoPathMessage();
+        return;
+    }
+
     // Reset previous highlights
     d3.selectAll('.link').classed('highlighted', false);
     d3.selectAll('.node')
         .style('fill', d => d.color || nodeColors.default)
         .classed('highlighted', false);
-    
-    // Create results panel
+
+    // Highlight path with animation
+    let delay = 0;
+    for (let i = 0; i < path.length - 1; i++) {
+        const current = path[i];
+        const next = path[i + 1];
+        
+        setTimeout(() => {
+            // Highlight edge
+            d3.selectAll('.link')
+                .filter(d => 
+                    (d.source.id === current && d.target.id === next) ||
+                    (d.bidirectional && d.source.id === next && d.target.id === current)
+                )
+                .classed('highlighted', true)
+                .style('stroke', nodeColors.path);
+
+            // Highlight nodes
+            d3.selectAll('.node')
+                .filter(d => d.id === current || d.id === next)
+                .style('fill', nodeColors.path)
+                .classed('highlighted', true);
+
+            // Show distance information
+            showDistanceInfo(current, distances[current]);
+        }, delay);
+        
+        delay += 500;
+    }
+
+    // Show final results
+    setTimeout(() => {
+        showPathResults(path, distance);
+    }, delay);
+}
+
+// Show no path found message
+function showNoPathMessage() {
     const resultsPanel = d3.select('body')
         .append('div')
         .attr('class', 'results-panel')
         .style('position', 'fixed')
         .style('left', '20px')
         .style('top', '20px')
-        .style('background', 'white')
-        .style('padding', '20px')
-        .style('border-radius', '12px')
-        .style('box-shadow', '0 4px 6px -1px rgba(0, 0, 0, 0.1)')
-        .style('max-width', '300px')
-        .style('opacity', 0)
+        .html(`
+            <div class="text-xl font-bold mb-4">No Path Found</div>
+            <div class="p-3 bg-red-50 rounded-lg">
+                <div class="text-red-600">
+                    No valid path exists between the selected nodes.
+                    Check if there is a valid directed path between them.
+                </div>
+            </div>
+        `);
+
+    setTimeout(() => {
+        resultsPanel.remove();
+    }, 5000);
+}
+
+// Show distance information during animation
+function showDistanceInfo(nodeId, distance) {
+    const node = d3.select('.node').filter(d => d.id === nodeId);
+    const bbox = node.node().getBBox();
+    
+    const info = d3.select('body')
+        .append('div')
+        .attr('class', 'distance-info')
+        .style('position', 'absolute')
+        .style('left', `${bbox.x + bbox.width}px`)
+        .style('top', `${bbox.y}px`)
+        .html(`Distance: ${distance}`);
+
+    setTimeout(() => info.remove(), 2000);
+}
+
+// Show final path results
+function showPathResults(path, distance) {
+    const resultsPanel = d3.select('body')
+        .append('div')
+        .attr('class', 'results-panel')
         .html(`
             <div class="text-xl font-bold mb-4">Shortest Path Results</div>
             <div class="space-y-3">
@@ -551,73 +719,13 @@ function visualizeShortestPath(path) {
                 </div>
                 <div class="p-3 bg-blue-50 rounded-lg">
                     <div class="font-medium text-blue-800">Total Distance:</div>
-                    <div class="text-blue-600">${calculatePathDistance(path)}</div>
+                    <div class="text-blue-600">${distance}</div>
                 </div>
             </div>
         `);
 
-    // Animate results panel
-    resultsPanel.transition()
-        .duration(500)
-        .style('opacity', 1);
-
-    // Highlight path with animation
-    let delay = 0;
-    for (let i = 0; i < path.length - 1; i++) {
-        const pathLink = links.find(l => 
-            (l.source.id === path[i] && l.target.id === path[i + 1]) ||
-            (l.source.id === path[i + 1] && l.target.id === path[i])
-        );
-        
-        if (pathLink) {
-            // Highlight edge
-            setTimeout(() => {
-                d3.selectAll('.link')
-                    .filter(d => 
-                        (d.source.id === pathLink.source.id && d.target.id === pathLink.target.id) ||
-                        (d.source.id === pathLink.target.id && d.target.id === pathLink.source.id)
-                    )
-                    .classed('highlighted', true)
-                    .style('stroke', nodeColors.path);
-
-                // Highlight nodes
-                d3.selectAll('.node')
-                    .filter(d => d.id === path[i] || d.id === path[i + 1])
-                    .style('fill', nodeColors.path)
-                    .classed('highlighted', true);
-            }, delay);
-        }
-        delay += 500;
-    }
-
-    // Remove results after delay
-    setTimeout(() => {
-        resultsPanel.transition()
-            .duration(500)
-            .style('opacity', 0)
-            .remove();
-    }, 10000);
-
     // Add to history
-    const start = document.getElementById('startNode').value;
-    const end = document.getElementById('endNode').value;
-    const distance = calculatePathDistance(path);
-    addToHistory(start, end, path, distance);
-}
-
-// Calculate total path distance
-function calculatePathDistance(path) {
-    let distance = 0;
-    for (let i = 0; i < path.length - 1; i++) {
-        const edge = links.find(l => 
-            (l.source.id === path[i] && l.target.id === path[i + 1]) ||
-            (l.source.id === path[i + 1] && l.target.id === path[i])
-        );
-        if (edge) {
-            distance += edge.weight;
-        }
-    }
-    return distance;
+    addToHistory(path[0], path[path.length - 1], path, distance);
 }
 
 // Language configuration
@@ -943,49 +1051,191 @@ function updateHistoryTable() {
 // Update the PDF export function
 function exportHistoryAsPDF() {
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF();
+    const doc = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
+    });
+
+    // Add company logo or title with background
+    const pageWidth = doc.internal.pageSize.width;
+    const pageHeight = doc.internal.pageSize.height;
+
+    // Add header background
+    doc.setFillColor(249, 250, 251);
+    doc.rect(0, 0, pageWidth, 35, 'F');
 
     // Add title
-    doc.setFontSize(16);
-    doc.text(translations[currentLang].pathHistory, 20, 20);
+    doc.setFontSize(28);
+    doc.setTextColor(63, 70, 229); // Indigo color
+    doc.setFont('helvetica', 'bold');
+    doc.text('Shortest Path Analysis', pageWidth/2, 15, { align: 'center' });
 
-    // Add timestamp
-    doc.setFontSize(10);
-    doc.text(`${translations[currentLang].generatedOn}: ${formatTimestamp(new Date())}`, 20, 30);
-
-    // Add table headers
-    const headers = [
-        translations[currentLang].timestamp,
-        translations[currentLang].from,
-        translations[currentLang].to,
-        translations[currentLang].path,
-        `${translations[currentLang].distance} (${translations[currentLang].distanceUnit})`
-    ];
-    
-    let y = 40;
+    // Add subtitle with timestamp and border
     doc.setFontSize(12);
-    doc.setTextColor(100);
-    headers.forEach((header, i) => {
-        doc.text(header, 20 + (i * 35), y);
-    });
+    doc.setTextColor(107, 114, 128); // Gray color
+    doc.setFont('helvetica', 'normal');
+    const timestamp = `${translations[currentLang].generatedOn}: ${formatTimestamp(new Date())}`;
+    doc.text(timestamp, pageWidth/2, 25, { align: 'center' });
 
-    // Add table content
-    doc.setTextColor(0);
-    pathHistory.forEach((entry) => {
-        y += 10;
-        if (y > 280) { // Check if we need a new page
-            doc.addPage();
-            y = 20;
+    // Add decorative line under header
+    doc.setDrawColor(229, 231, 235);
+    doc.setLineWidth(0.5);
+    doc.line(40, 35, pageWidth - 40, 35);
+
+    // Define table structure with improved widths
+    const headers = [
+        { header: translations[currentLang].timestamp, width: 40 },
+        { header: translations[currentLang].from, width: 35 },
+        { header: translations[currentLang].to, width: 35 },
+        { header: translations[currentLang].path, width: 90 },
+        { header: `${translations[currentLang].distance} (${translations[currentLang].kmAbbr})`, width: 35 }
+    ];
+
+    // Calculate total width and starting x position to center the table
+    const totalWidth = headers.reduce((sum, col) => sum + col.width, 0);
+    const startX = (pageWidth - totalWidth) / 2;
+    let currentY = 45;
+
+    // Draw table header with gradient effect
+    let currentX = startX;
+    
+    // Add header background with gradient effect
+    doc.setFillColor(243, 244, 246);
+    doc.rect(startX, currentY - 5, totalWidth, 12, 'F');
+    
+    // Add header border
+    doc.setDrawColor(209, 213, 219);
+    doc.setLineWidth(0.3);
+    doc.rect(startX, currentY - 5, totalWidth, 12);
+
+    // Add header text
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(31, 41, 55);
+    doc.setFontSize(11);
+
+    headers.forEach((col, index) => {
+        // Add vertical lines between headers
+        if (index > 0) {
+            doc.line(currentX, currentY - 5, currentX, currentY + 7);
         }
-        doc.text(formatTimestamp(entry.timestamp), 20, y);
-        doc.text(entry.start, 55, y);
-        doc.text(entry.end, 90, y);
-        doc.text(entry.path.join(' → '), 125, y);
-        doc.text(`${entry.distance}`, 160, y);
+        doc.text(col.header, currentX + 3, currentY + 2);
+        currentX += col.width;
     });
 
-    // Save the PDF
-    doc.save('shortest-path-history.pdf');
+    currentY += 10;
+
+    // Add table content with improved formatting
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(55, 65, 81);
+    doc.setFontSize(10);
+
+    // Draw table rows with improved styling
+    pathHistory.forEach((entry, index) => {
+        const rowHeight = 10;
+        currentY += rowHeight;
+
+        // Add new page if needed
+        if (currentY > pageHeight - 20) {
+            doc.addPage();
+            // Reset coordinates and redraw header
+            currentY = 20;
+            currentX = startX;
+            
+            // Redraw header on new page
+            doc.setFillColor(243, 244, 246);
+            doc.rect(startX, currentY - 5, totalWidth, 12, 'F');
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(31, 41, 55);
+            doc.setFontSize(11);
+            
+            headers.forEach((col, index) => {
+                if (index > 0) {
+                    doc.line(currentX, currentY - 5, currentX, currentY + 7);
+                }
+                doc.text(col.header, currentX + 3, currentY + 2);
+                currentX += col.width;
+            });
+            
+            currentY += 15;
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(55, 65, 81);
+            doc.setFontSize(10);
+        }
+
+        // Add zebra striping with softer colors
+        if (index % 2 === 0) {
+            doc.setFillColor(249, 250, 251);
+            doc.rect(startX, currentY - 5, totalWidth, rowHeight, 'F');
+        }
+
+        // Add row content with improved formatting
+        currentX = startX;
+        
+        // Format content
+        const formattedTimestamp = formatTimestamp(entry.timestamp);
+        // Replace arrow symbols and format path
+        const pathSegments = entry.path.map(node => node.trim());
+        const formattedPath = pathSegments.join(' → ');
+        const formattedDistance = new Intl.NumberFormat(currentLang).format(entry.distance);
+
+        // Draw cell borders
+        doc.setDrawColor(229, 231, 235);
+        doc.setLineWidth(0.1);
+        
+        // Add cell content with proper alignment and formatting
+        // Timestamp
+        doc.text(formattedTimestamp, currentX + 3, currentY);
+        currentX += headers[0].width;
+        doc.line(currentX, currentY - 5, currentX, currentY + 5);
+
+        // From
+        doc.text(entry.start, currentX + 3, currentY);
+        currentX += headers[1].width;
+        doc.line(currentX, currentY - 5, currentX, currentY + 5);
+
+        // To
+        doc.text(entry.end, currentX + 3, currentY);
+        currentX += headers[2].width;
+        doc.line(currentX, currentY - 5, currentX, currentY + 5);
+
+        // Path with arrow symbol
+        const pathLines = doc.splitTextToSize(formattedPath, headers[3].width - 6);
+        doc.text(pathLines, currentX + 3, currentY);
+        currentX += headers[3].width;
+        doc.line(currentX, currentY - 5, currentX, currentY + 5);
+
+        // Distance (right-aligned)
+        doc.text(formattedDistance, currentX + headers[4].width - 3, currentY, { align: 'right' });
+
+        // Add horizontal lines between rows
+        doc.line(startX, currentY + 5, startX + totalWidth, currentY + 5);
+    });
+
+    // Add final border
+    doc.setDrawColor(209, 213, 219);
+    doc.setLineWidth(0.3);
+    doc.rect(startX, 40, totalWidth, currentY - 35);
+
+    // Add footer with enhanced design
+    const footerY = pageHeight - 10;
+    doc.setFillColor(249, 250, 251);
+    doc.rect(0, footerY - 8, pageWidth, 20, 'F');
+    
+    doc.setFontSize(8);
+    doc.setTextColor(107, 114, 128);
+    doc.setFont('helvetica', 'italic');
+    doc.text('Generated by Shortest Path Analysis Tool', startX, footerY);
+    
+    // Add page numbers with enhanced formatting
+    doc.setFont('helvetica', 'bold');
+    const pageInfo = `Page ${doc.internal.getNumberOfPages()}`;
+    doc.text(pageInfo, pageWidth - startX, footerY, { align: 'right' });
+
+    // Save the PDF with formatted name
+    const dateStr = new Date().toLocaleDateString('fr-FR').replace(/\//g, '-');
+    const timeStr = new Date().toLocaleTimeString('fr-FR').replace(/:/g, '-');
+    doc.save(`shortest-path-analysis_${dateStr}_${timeStr}.pdf`);
 }
 
 // Add event listeners

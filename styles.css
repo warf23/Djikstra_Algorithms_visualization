@@ -129,6 +129,13 @@ button:hover .fas {
     stroke-width: 2;
     cursor: pointer;
     transition: all 0.3s ease;
+    marker-end: url(#arrowhead);
+}
+
+.link.bidirectional {
+    stroke: #f59e0b;
+    marker-end: url(#arrowhead-bidirectional);
+    marker-start: url(#arrowhead-start);
 }
 
 .link:hover {
@@ -143,6 +150,11 @@ button:hover .fas {
     stroke-width: 3;
     filter: drop-shadow(0 4px 3px rgb(0 0 0 / 0.2));
     animation: pathTraverse 1.5s ease-in-out infinite;
+    marker-end: url(#arrowhead-highlighted);
+}
+
+.link.highlighted.bidirectional {
+    marker-start: url(#arrowhead-highlighted-start);
 }
 
 .link-label {
@@ -263,4 +275,39 @@ button:hover .fas {
 .path-animation {
     stroke-dasharray: 10;
     animation: pathTraverse 1.5s ease-in-out infinite;
-} 
+}
+
+/* Arrow Animation */
+@keyframes arrowFlow {
+    from {
+        stroke-dashoffset: 24;
+    }
+    to {
+        stroke-dashoffset: 0;
+    }
+}
+
+.link {
+    stroke-dasharray: 12 12;
+    animation: arrowFlow 1s linear infinite;
+}
+
+.link.bidirectional {
+    animation: none;
+    stroke-dasharray: none;
+}
+
+/* Distance Info Styles */
+.distance-info {
+    background: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #4f46e5;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    pointer-events: none;
+    z-index: 1000;
+    transition: all 0.3s ease;
+}
+ 
